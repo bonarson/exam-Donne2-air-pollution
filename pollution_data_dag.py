@@ -1,5 +1,5 @@
 from airflow import DAG
-from airflow.operators.python_operator import PythonOperator
+from airflow.operators.python import PythonOperator
 from datetime import datetime, timedelta
 import requests
 import json
@@ -37,32 +37,12 @@ def fetch_and_normalize_air_pollution_data():
         components = data['list'][0]['components']
         normalized_components = normalize_data(components)
 
-        # Calcul des valeurs d'AQI pour chaque composant
-        aqi_values = calculate_aqi_values(components)
-        
-        # Ajouter les informations supplémentaires
-        city = 'Paris'
-        country = 'FR'
-        aqi_data = {
-            'Country': country,
-            'City': city,
-            'AQI Value': sum(aqi_values.values()),
-            'AQI Category': 'Good',  
-            'CO AQI Value': aqi_values['co'],
-            'CO AQI Category': 'Good', 
-            'Ozone AQI Value': aqi_values['o3'],
-            'Ozone AQI Category': 'Good',  
-            'NO2 AQI Value': aqi_values['no2'],
-            'NO2 AQI Category': 'Good',  
-            'PM2.5 AQI Value': aqi_values['pm2_5'],
-            'PM2.5 AQI Category': 'Good',  
-            'newCountry': 'FR'
-        }
+        # Remplacer les composants d'origine par les valeurs normalisées
+        data['list'][0]['components'] = normalized_components
 
         # Lire les données existantes dans le fichier
-        file_path = '/home/ngourndii/airflow/air_pollution_data.json'
-        if os.path.exists(file_path):
-            with open(file_path, 'r') as f:
+        if os.path.exists('/home/ngourndii/airflow/air_pollution_data.json'):
+            with open('/home/ngourndii/airflow/air_pollution_data.json', 'r') as f:
                 try:
                     existing_data = json.load(f)
                 except json.JSONDecodeError:
@@ -70,11 +50,11 @@ def fetch_and_normalize_air_pollution_data():
         else:
             existing_data = []
 
-        # Ajouter les nouvelles données à la liste
-        existing_data.append(aqi_data)
+        # Ajouter les nouvelles données normalisées à la liste
+        existing_data.append(data)
 
         # Écrire à nouveau dans le fichier
-        with open(file_path, 'w') as f:
+        with open('/home/ngourndii/airflow/air_pollution_data.json', 'w') as f:
             json.dump(existing_data, f, indent=4)
 
     except requests.exceptions.RequestException as e:
@@ -85,6 +65,7 @@ def fetch_and_normalize_air_pollution_data():
 
 # Fonction de normalisation (Min-Max scaling)
 def normalize_data(components):
+    # Définir les valeurs min et max pour chaque composant
     min_values = {'co': 0, 'no': 0, 'no2': 0, 'o3': 0, 'so2': 0, 'pm2_5': 0, 'pm10': 0, 'nh3': 0}
     max_values = {'co': 1000, 'no': 100, 'no2': 100, 'o3': 300, 'so2': 100, 'pm2_5': 500, 'pm10': 500, 'nh3': 100}
 
@@ -96,17 +77,6 @@ def normalize_data(components):
         normalized_components[key] = normalized_value
 
     return normalized_components
-
-# Fonction pour calculer les valeurs d'AQI
-def calculate_aqi_values(components):
-    # Calculs d'AQI fictifs pour chaque composant
-    # Les vraies méthodes de calcul d'AQI devraient être définies ici
-    return {
-        'co': components['co'],
-        'o3': components['o3'],
-        'no2': components['no2'],
-        'pm2_5': components['pm2_5']
-    }
 
 # Définir la tâche dans le DAG
 fetch_task = PythonOperator(
