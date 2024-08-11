@@ -1,9 +1,9 @@
 from airflow import DAG
-from airflow.operators.python import PythonOperator
+from airflow.operators.python_operator import PythonOperator
 from datetime import datetime, timedelta
 import requests
 import json
-import os 
+import os
 
 # Définir les paramètres du DAG
 default_args = {
@@ -33,27 +33,30 @@ def fetch_and_normalize_air_pollution_data():
         response.raise_for_status()  # Vérifie si l'API a renvoyé une erreur
         data = response.json()
 
-        # Extraire et normaliser les données
+        # Normalisation des composants de la pollution
         components = data['list'][0]['components']
         normalized_components = normalize_data(components)
 
-        # Créer le dictionnaire de sortie avec les colonnes souhaitées
-        output_data = {
-            'Country': 'FR',  # Exemple statique pour le pays
-            'City': 'Paris',  # Exemple statique pour la ville
-            'AQI Value': data['list'][0].get('main', {}).get('aqi', 'N/A'),
-            'AQI Category': 'N/A',  # Peut être calculé selon la valeur de AQI
-            'CO AQI Value': normalized_components.get('co', 'N/A'),
-            'CO AQI Category': categorize_aqi(normalized_components.get('co', 0)),
-            'Ozone AQI Value': normalized_components.get('o3', 'N/A'),
-            'Ozone AQI Category': categorize_aqi(normalized_components.get('o3', 0)),
-            'NO2 AQI Value': normalized_components.get('no2', 'N/A'),
-            'NO2 AQI Category': categorize_aqi(normalized_components.get('no2', 0)),
-            'PM2.5 AQI Value': normalized_components.get('pm2_5', 'N/A'),
-            'PM2.5 AQI Category': categorize_aqi(normalized_components.get('pm2_5', 0)),
-            'PM10 AQI Value': normalized_components.get('pm10', 'N/A'),
-            'PM10 AQI Category': categorize_aqi(normalized_components.get('pm10', 0)),
-            'newCountry': 'France'  # Exemple statique pour le nouveau pays
+        # Calcul des valeurs d'AQI pour chaque composant
+        aqi_values = calculate_aqi_values(components)
+        
+        # Ajouter les informations supplémentaires
+        city = 'Paris'
+        country = 'FR'
+        aqi_data = {
+            'Country': country,
+            'City': city,
+            'AQI Value': sum(aqi_values.values()),
+            'AQI Category': 'Good',  
+            'CO AQI Value': aqi_values['co'],
+            'CO AQI Category': 'Good', 
+            'Ozone AQI Value': aqi_values['o3'],
+            'Ozone AQI Category': 'Good',  
+            'NO2 AQI Value': aqi_values['no2'],
+            'NO2 AQI Category': 'Good',  
+            'PM2.5 AQI Value': aqi_values['pm2_5'],
+            'PM2.5 AQI Category': 'Good',  
+            'newCountry': 'FR'
         }
 
         # Lire les données existantes dans le fichier
@@ -67,8 +70,8 @@ def fetch_and_normalize_air_pollution_data():
         else:
             existing_data = []
 
-        # Ajouter les nouvelles données au fichier
-        existing_data.append(output_data)
+        # Ajouter les nouvelles données à la liste
+        existing_data.append(aqi_data)
 
         # Écrire à nouveau dans le fichier
         with open(file_path, 'w') as f:
@@ -78,11 +81,10 @@ def fetch_and_normalize_air_pollution_data():
         print(f"Error fetching data: {e}")
         return None
 
-    return output_data
+    return data
 
 # Fonction de normalisation (Min-Max scaling)
 def normalize_data(components):
-    # Définir les valeurs min et max pour chaque composant
     min_values = {'co': 0, 'no': 0, 'no2': 0, 'o3': 0, 'so2': 0, 'pm2_5': 0, 'pm10': 0, 'nh3': 0}
     max_values = {'co': 1000, 'no': 100, 'no2': 100, 'o3': 300, 'so2': 100, 'pm2_5': 500, 'pm10': 500, 'nh3': 100}
 
@@ -95,18 +97,16 @@ def normalize_data(components):
 
     return normalized_components
 
-# Fonction pour catégoriser l'AQI
-def categorize_aqi(value):
-    if value < 0.2:
-        return 'Good'
-    elif value < 0.4:
-        return 'Moderate'
-    elif value < 0.6:
-        return 'Unhealthy for Sensitive Groups'
-    elif value < 0.8:
-        return 'Unhealthy'
-    else:
-        return 'Very Unhealthy'
+# Fonction pour calculer les valeurs d'AQI
+def calculate_aqi_values(components):
+    # Calculs d'AQI fictifs pour chaque composant
+    # Les vraies méthodes de calcul d'AQI devraient être définies ici
+    return {
+        'co': components['co'],
+        'o3': components['o3'],
+        'no2': components['no2'],
+        'pm2_5': components['pm2_5']
+    }
 
 # Définir la tâche dans le DAG
 fetch_task = PythonOperator(
@@ -116,4 +116,3 @@ fetch_task = PythonOperator(
 )
 
 fetch_task
-
