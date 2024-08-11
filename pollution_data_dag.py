@@ -17,57 +17,77 @@ default_args = {
 dag = DAG(
     'fetch_air_pollution_data',
     default_args=default_args,
-    description='DAG to fetch and normalize air pollution data from OpenWeatherMap API',
-    schedule_interval='*/5 * * * *', 
+    description='DAG to fetch and normalize air pollution data from OpenWeatherMap API including AQI category',
+    schedule_interval='*/5 * * * *',
 )
+
+# Liste des villes avec leurs coordonnées (latitude, longitude)
+cities = {
+    'Los Angeles': ('34.0522', '-118.2437'),
+    'Paris': ('48.8566', '2.3522'),
+    'Tokyo': ('35.6828', '139.7594'),
+    'Antananarivo': ('-18.8792', '47.5079'),
+    'Nairobi': ('-1.2864', '36.8172'),
+    'Lima': ('-12.0464', '-77.0428')
+}
 
 # Fonction pour appeler l'API et traiter les données
 def fetch_and_normalize_air_pollution_data():
     api_key = '64c3b81d0e042e9ee938730c409c956d'
-    latitude = '48.8566'
-    longitude = '2.3522'
-    url = f'http://api.openweathermap.org/data/2.5/air_pollution?lat={latitude}&lon={longitude}&appid={api_key}'
+    all_data = []
 
-    try:
-        response = requests.get(url)
-        response.raise_for_status()  # Vérifie si l'API a renvoyé une erreur
-        data = response.json()
+    for city, (latitude, longitude) in cities.items():
+        url = f'http://api.openweathermap.org/data/2.5/air_pollution?lat={latitude}&lon={longitude}&appid={api_key}'
 
-        # Normalisation des composants de la pollution
-        components = data['list'][0]['components']
-        normalized_components = normalize_data(components)
+        try:
+            response = requests.get(url)
+            response.raise_for_status()
+            data = response.json()
 
-        # Remplacer les composants d'origine par les valeurs normalisées
-        data['list'][0]['components'] = normalized_components
+            # Normalisation des composants de la pollution
+            components = data['list'][0]['components']
+            normalized_components = normalize_data(components)
 
-        # Lire les données existantes dans le fichier
-        if os.path.exists('/home/ngourndii/airflow/air_pollution_data.json'):
-            with open('/home/ngourndii/airflow/air_pollution_data.json', 'r') as f:
-                try:
-                    existing_data = json.load(f)
-                except json.JSONDecodeError:
-                    existing_data = []
-        else:
-            existing_data = []
+            # Ajout de la catégorie AQI
+            aqi_category = data['list'][0]['main']['aqi']
 
-        # Ajouter les nouvelles données normalisées à la liste
-        existing_data.append(data)
+            # Remplacer les composants d'origine par les valeurs normalisées
+            data['list'][0]['components'] = normalized_components
+            data['list'][0]['main']['aqi'] = aqi_category
 
-        # Écrire à nouveau dans le fichier
-        with open('/home/ngourndii/airflow/air_pollution_data.json', 'w') as f:
-            json.dump(existing_data, f, indent=4)
+            # Ajouter la ville aux données
+            data['city'] = city
 
-    except requests.exceptions.RequestException as e:
-        print(f"Error fetching data: {e}")
-        return None
+            # Ajouter les nouvelles données normalisées à la liste
+            all_data.append(data)
 
-    return data
+        except requests.exceptions.RequestException as e:
+            print(f"Error fetching data for {city}: {e}")
+
+    # Lire les données existantes dans le fichier
+    file_path = '/home/ngourndii/airflow/air_pollution_data.json'
+    if os.path.exists(file_path):
+        with open(file_path, 'r') as f:
+            try:
+                existing_data = json.load(f)
+            except json.JSONDecodeError:
+                existing_data = []
+    else:
+        existing_data = []
+
+    # Ajouter les nouvelles données normalisées à la liste
+    existing_data.extend(all_data)
+
+    # Écrire à nouveau dans le fichier
+    with open(file_path, 'w') as f:
+        json.dump(existing_data, f, indent=4)
+
+    return all_data
 
 # Fonction de normalisation (Min-Max scaling)
 def normalize_data(components):
-    # Définir les valeurs min et max pour chaque composant
-    min_values = {'co': 0, 'no': 0, 'no2': 0, 'o3': 0, 'so2': 0, 'pm2_5': 0, 'pm10': 0, 'nh3': 0}
-    max_values = {'co': 1000, 'no': 100, 'no2': 100, 'o3': 300, 'so2': 100, 'pm2_5': 500, 'pm10': 500, 'nh3': 100}
+    min_values = {'co': 0, 'no': 0, 'no2': 0, 'o3': 0, 'so2': 0, 'pm2_5': 0, 'pm10': 0, 'nh3': 0, 'aqi': 0}
+    max_values = {'co': 1000, 'no': 100, 'no2': 100, 'o3': 300, 'so2': 100, 'pm2_5': 500, 'pm10': 500, 'nh3': 100, 'aqi': 500}
 
     normalized_components = {}
     for key, value in components.items():
@@ -84,5 +104,3 @@ fetch_task = PythonOperator(
     python_callable=fetch_and_normalize_air_pollution_data,
     dag=dag,
 )
-
-fetch_task
